@@ -1,4 +1,6 @@
 import argparse
+import json
+import os
 
 from src.expert_knowledge import do_expert_knowledge_check
 from src.statistical_analysis import do_statistical_analysis
@@ -9,13 +11,19 @@ def main():
     parser = argparse.ArgumentParser(
         description="Perform post-market evaluation of the synthetic data"
     )
-    # Expert Knowledge Arguments
+    parser.add_argument(
+        "--original_samples_path",
+        type=str,
+        default="data/original_samples",
+        help="Path to the original samples",
+    )
     parser.add_argument(
         "--synthetic_samples_path",
         type=str,
         default="data/synthetic_samples",
         help="Directory containing synthetic samples",
     )
+    # Expert Knowledge Arguments
     parser.add_argument(
         "--expert_knowledge_results_path",
         type=str,
@@ -31,12 +39,6 @@ def main():
     )
     # Adversarial Evaluation Arguments
     parser.add_argument(
-        "--original_samples_path",
-        type=str,
-        default="data/original_samples",
-        help="Path to the original samples",
-    )
-    parser.add_argument(
         "--adversarial_evaluation_results_path",
         type=str,
         default="adversarial_evaluation_results.json",
@@ -44,33 +46,36 @@ def main():
     )
     args = parser.parse_args()
 
+    do_expert_knowledge_check(
+        args.synthetic_samples_path, args.expert_knowledge_results_path
+    )
 
-    expert_knowledge_results = do_expert_knowledge_check(args.synthetic_samples_path)
-
-    # do_statistical_analysis()
+    do_statistical_analysis(
+        args.synthetic_samples_path, args.statistical_analysis_results_path
+    )
 
     # do_adversarial_evaluation()
 
-    # with open(args.expert_knowledge_results_path, "r") as f:
-    #     expert_knowledge_results = json.load(f)
+    with open(args.expert_knowledge_results_path, "r") as f:
+        expert_knowledge_results = json.load(f)
 
-    # with open(args.statistical_analysis_results_path, "r") as f:
-    #     statistical_analysis_results = json.load(f)
+    with open(args.statistical_analysis_results_path, "r") as f:
+        statistical_analysis_results = json.load(f)
 
     # with open(args.adversarial_evaluation_results_path, "r") as f:
     #     adversarial_evaluation_results = json.load(f)
 
-    # combined_results = {
-    #     "expert_knowledge_evaluation": expert_knowledge_results,
-    #     "statistical_analysis_evaluation": statistical_analysis_results,
-    #     "adversarial_evaluation": adversarial_evaluation_results,
-    # }
+    combined_results = {
+        "expert_knowledge_evaluation": expert_knowledge_results,
+        "statistical_analysis_evaluation": statistical_analysis_results,
+        # "adversarial_evaluation": adversarial_evaluation_results,
+    }
 
-    # with open("post_market_evaluation_results.json", "w") as f:
-    #     json.dump(combined_results, f, indent=4)
+    with open("post_market_evaluation_results.json", "w") as f:
+        json.dump(combined_results, f, indent=4)
 
-    # os.remove(args.expert_knowledge_results_path)
-    # os.remove(args.statistical_analysis_results_path)
+    os.remove(args.expert_knowledge_results_path)
+    os.remove(args.statistical_analysis_results_path)
     # os.remove(args.adversarial_evaluation_results_path)
 
 
