@@ -1,1 +1,4 @@
 .venv
+data/
+notes.md
+__pycache__/
