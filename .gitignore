@@ -1,4 +1,7 @@
 .venv
-data/
-notes.md
 __pycache__/
+*.pyc
+.vscode
+*.yaml
+data/
+output/
