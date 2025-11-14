@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Any
+from typing import Dict, Any
 import requests
 import time
 import json
@@ -27,11 +27,6 @@ class STARWrapper:
         self.timeout = timeout
 
         self.headers = {"Content-Type": "application/json"}
-
-        # Store last predictions and responses
-        self._last_response = None
-        self._last_prediction_interval = None
-        self._last_prediction_class = None
 
     def _validate_patient_data(self, patient_data: Dict[str, Any]) -> None:
         """
@@ -144,14 +139,12 @@ class STARWrapper:
                         f"API response missing required fields. Got: {result.keys()}"
                     )
 
-                # Store response and interval
-                self._last_response = result
-                self._last_prediction_interval = {
+                prediction_interval = {
                     "BG5TH": result["BG5TH"],
                     "BG95TH": result["BG95TH"],
                 }
 
-                return self._last_prediction_interval
+                return prediction_interval
 
             except requests.exceptions.Timeout as e:
                 if attempt < num_retries - 1:
@@ -177,10 +170,11 @@ class STARWrapper:
 
     def validate_prediction(
         self,
+        interval: Dict[str, float],
         ground_truth: float,
     ) -> int:
         """
-        Check whether ground truth value falls within the last predicted range.
+        Check whether ground truth value falls within the predicted range.
 
         Validates if the provided ground truth blood glucose value falls within
         the last prediction interval obtained from the predict() method.
@@ -188,6 +182,7 @@ class STARWrapper:
         0 otherwise (incorrect prediction).
 
         Args:
+            interval (Dict[str, float]): Prediction interval with BG5TH and BG95TH.
             ground_truth (float): Actual blood glucose value to compare against
                 the last predicted range.
 
@@ -195,67 +190,12 @@ class STARWrapper:
             int: Binary prediction correctness indicator:
                 - 1 if ground_truth is within [BG5TH, BG95TH] (correct prediction)
                 - 0 if ground_truth is outside the range (incorrect prediction)
-
-        Raises:
-            RuntimeError: If predict() has not been called yet (no prediction interval available).
         """
 
-        # Check if we have a prediction interval to validate against
-        if self._last_prediction_interval is None:
-            raise RuntimeError(
-                "No prediction interval available. Call predict() first before validating."
-            )
-
         # Check if ground truth is within the predicted range
-        bg_5th = self._last_prediction_interval["BG5TH"]
-        bg_95th = self._last_prediction_interval["BG95TH"]
+        bg_5th = interval["BG5TH"]
+        bg_95th = interval["BG95TH"]
 
         is_inside = int(bg_5th <= ground_truth <= bg_95th)
 
-        # Store validation result
-        self._last_prediction_class = {
-            "BG5TH": bg_5th,
-            "BG95TH": bg_95th,
-            "ground_truth": ground_truth,
-            "is_inside": bool(is_inside),
-        }
-
         return is_inside
-
-    def get_last_response(self) -> Optional[Dict[str, Any]]:
-        """
-        Get the raw API response from the last prediction request.
-
-        Returns:
-            Optional[Dict[str, Any]]: Complete API response dictionary from
-                the most recent predict or predict_class call. Returns None
-                if no predictions have been made yet.
-        """
-
-        return self._last_response
-
-    def get__last_prediction_interval(self) -> Optional[Dict[str, float]]:
-        """
-        Get the prediction interval from the last request.
-
-        Returns:
-            Optional[Dict[str, float]]: Dictionary with 'BG5TH' and 'BG95TH'
-                keys containing the predicted blood glucose range bounds.
-                Returns None if no predictions have been made yet.
-        """
-        return self._last_prediction_interval
-
-    def get_last_prediction_class(self) -> Optional[Dict[str, Any]]:
-        """
-        Get detailed results from the last predict_class() call.
-
-        Returns:
-            Optional[Dict[str, Any]]: Dictionary containing:
-                - "BG5TH" (float): Lower bound of predicted range
-                - "BG95TH" (float): Upper bound of predicted range
-                - "ground_truth" (float): Ground truth value used for comparison
-                - "is_inside" (bool): Whether ground truth was inside the range
-                Returns None if predict_class() has not been called yet.
-        """
-
-        return self._last_prediction_class
