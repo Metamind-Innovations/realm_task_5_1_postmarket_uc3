@@ -1,8 +1,11 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 import json
 import os
+from pathlib import Path
+import argparse
 
-from src.utils.time_conversion import unix_to_datetime
+from utils.time_conversion import unix_to_datetime
+from utils.generic_utils import save_json
 
 
 def check_blood_glucose_values(data_with_datetime, filename):
@@ -145,14 +148,14 @@ def do_expert_knowledge_check(synthetic_samples_path, expert_knowledge_results_p
     expert_knowledge_results = {}
 
     expert_knowledge_results["criterion_1"] = {}
-    expert_knowledge_results["criterion_1"]["information"] = (
-        "The valid humanly plausible ranges for blood glucose are [1.2, 110] mmol/L according to Barry (2020) and Manappallil (2017)"
-    )
+    expert_knowledge_results["criterion_1"][
+        "information"
+    ] = "The valid humanly plausible ranges for blood glucose are [1.2, 110] mmol/L according to Barry (2020) and Manappallil (2017)"
 
     expert_knowledge_results["criterion_2"] = {}
-    expert_knowledge_results["criterion_2"]["information"] = (
-        "According to Walsh et. al. (2014), subcutaneous insulin may not have been administered in the last 6 hours prior the period considered (so 12hours before the time of evaluation)"
-    )
+    expert_knowledge_results["criterion_2"][
+        "information"
+    ] = "According to Walsh et. al. (2014), subcutaneous insulin may not have been administered in the last 6 hours prior the period considered (so 12hours before the time of evaluation)"
 
     for filename in os.listdir(synthetic_samples_path):
         if filename.endswith(".json"):
@@ -178,5 +181,42 @@ def do_expert_knowledge_check(synthetic_samples_path, expert_knowledge_results_p
             )
             expert_knowledge_results["criterion_2"].update(criterion_2_result)
 
-    with open(expert_knowledge_results_path, "w") as f:
-        json.dump(expert_knowledge_results, f)
+    # Store results
+    Path(expert_knowledge_results_path).parent.mkdir(parents=True, exist_ok=True)
+    save_json(data=expert_knowledge_results, filepath=expert_knowledge_results_path)
+
+    print(
+        f"Expert Knowledge Evaluation Completed. Results saved to {expert_knowledge_results_path}"
+    )
+
+
+def main() -> None:
+    """
+    Main entry point for expert knowledge evaluation of STAR synthetic data.
+    Parses command line arguments and executes expert knowledge evaluation.
+    """
+
+    parser = argparse.ArgumentParser(
+        description="Run expert knowledge evaluation for STAR synthetic data"
+    )
+    parser.add_argument(
+        "--synth_dir", required=True, help="Path to tabular synthetic data directory"
+    )
+
+    parser.add_argument(
+        "--output",
+        default="output/expert_knowledge_results.json",
+        help="Output JSON file path",
+    )
+
+    args = parser.parse_args()
+
+    # Execute expert knowledge evaluation
+    do_expert_knowledge_check(
+        synthetic_samples_path=args.synth_dir,
+        expert_knowledge_results_path=args.output,
+    )
+
+
+if __name__ == "__main__":
+    main()
