@@ -1,8 +1,11 @@
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import timedelta
+import argparse
+from pathlib import Path
 
-from src.utils.time_conversion import unix_to_datetime
+from utils.time_conversion import unix_to_datetime
+from utils.generic_utils import save_json
 
 
 def check_required_fields(data, filename):
@@ -201,24 +204,24 @@ def do_statistical_analysis(synthetic_samples_path, statistical_analysis_results
     statistical_analysis_results = {}
 
     statistical_analysis_results["check_1"] = {}
-    statistical_analysis_results["check_1"]["information"] = (
-        "Required fields exist (diabeticStatus, startTime, bloodGlucose, insulinInfusion, insulinBolus, nutritionInfusion, nutritionBolus)"
-    )
+    statistical_analysis_results["check_1"][
+        "information"
+    ] = "Required fields exist (diabeticStatus, startTime, bloodGlucose, insulinInfusion, insulinBolus, nutritionInfusion, nutritionBolus)"
 
     statistical_analysis_results["check_2"] = {}
-    statistical_analysis_results["check_2"]["information"] = (
-        "Both IV insulin and nutrition rates cannot be null at the same time"
-    )
+    statistical_analysis_results["check_2"][
+        "information"
+    ] = "Both IV insulin and nutrition rates cannot be null at the same time"
 
     statistical_analysis_results["check_3"] = {}
-    statistical_analysis_results["check_3"]["information"] = (
-        "diabeticStatus has a valid value (0,1,2)"
-    )
+    statistical_analysis_results["check_3"][
+        "information"
+    ] = "diabeticStatus has a valid value (0,1,2)"
 
     statistical_analysis_results["check_4"] = {}
-    statistical_analysis_results["check_4"]["information"] = (
-        "At least 3 blood glucose measurements in the last 6 hours"
-    )
+    statistical_analysis_results["check_4"][
+        "information"
+    ] = "At least 3 blood glucose measurements in the last 6 hours"
 
     for filename in os.listdir(synthetic_samples_path):
         if filename.endswith(".json"):
@@ -248,5 +251,44 @@ def do_statistical_analysis(synthetic_samples_path, statistical_analysis_results
             )
             statistical_analysis_results["check_4"].update(check_4_result)
 
-    with open(statistical_analysis_results_path, "w") as f:
-        json.dump(statistical_analysis_results, f)
+    # Store results
+    Path(statistical_analysis_results_path).parent.mkdir(parents=True, exist_ok=True)
+    save_json(
+        data=statistical_analysis_results, filepath=statistical_analysis_results_path
+    )
+
+    print(
+        f"Statistical Analysis Completed. Results saved to {statistical_analysis_results_path}"
+    )
+
+
+def main() -> None:
+    """
+    Main entry point for statistical of STAR synthetic data.
+    Parses command line arguments and executes statistical analysis.
+    """
+
+    parser = argparse.ArgumentParser(
+        description="Run statistical analysis for STAR synthetic data"
+    )
+    parser.add_argument(
+        "--synth_dir", required=True, help="Path to tabular synthetic data directory"
+    )
+
+    parser.add_argument(
+        "--output",
+        default="output/statistical_analysis_results.json",
+        help="Output JSON file path",
+    )
+
+    args = parser.parse_args()
+
+    # Execute statistical analysis
+    do_statistical_analysis(
+        synthetic_samples_path=args.synth_dir,
+        statistical_analysis_results_path=args.output,
+    )
+
+
+if __name__ == "__main__":
+    main()
