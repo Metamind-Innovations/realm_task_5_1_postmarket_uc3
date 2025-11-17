@@ -141,7 +141,7 @@ def expert_knowledge_evaluation(
         "python",
         str(script),
         "--synth_dir",
-        str(data_path / "syntetic_data"),
+        str(data_path / "synthetic_data"),
         "--output",
         str(results_path / "expert_knowledge_results.json"),
     ]
@@ -184,7 +184,7 @@ def statistical_analysis(
         "python",
         str(script),
         "--synth_dir",
-        str(data_path / "syntetic_data"),
+        str(data_path / "synthetic_data"),
         "--output",
         str(results_path / "statistical_analysis_results.json"),
     ]
@@ -236,7 +236,7 @@ def adversarial_evaluation(
         "python",
         str(script),
         "--synth_dir",
-        str(data_path / "syntetic_data"),
+        str(data_path / "synthetic_data"),
         "--rwd_dir",
         str(data_path / "rwd_data"),
         "--output",
