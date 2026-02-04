@@ -3,6 +3,7 @@ import requests
 import time
 import json
 
+#TODO: Modify code for dockerized model instead of API
 
 class STARWrapper:
     """
