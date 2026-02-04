@@ -94,9 +94,9 @@ def check_subcataneous_insulin(data_with_datetime, filename):
                             infusion_data = infusion_entry[1]
 
                             if (
-                                window_start <= infusion_timestamp <= window_end
-                                and isinstance(infusion_data, dict)
-                                and infusion_data.get("route") == 1
+                                    window_start <= infusion_timestamp <= window_end
+                                    and isinstance(infusion_data, dict)
+                                    and infusion_data.get("route") == 1
                             ):
                                 result[filename]["valid"] = False
                                 result[filename]["invalid_administrations"].append(
@@ -115,9 +115,9 @@ def check_subcataneous_insulin(data_with_datetime, filename):
                             bolus_data = bolus_entry[1]
 
                             if (
-                                window_start <= bolus_timestamp <= window_end
-                                and isinstance(bolus_data, dict)
-                                and bolus_data.get("route") == 1
+                                    window_start <= bolus_timestamp <= window_end
+                                    and isinstance(bolus_data, dict)
+                                    and bolus_data.get("route") == 1
                             ):
                                 result[filename]["valid"] = False
                                 result[filename]["invalid_administrations"].append(

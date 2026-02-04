@@ -6,11 +6,8 @@ def unix_to_datetime(data_dict):
     """
     Convert Unix timestamps to datetime objects in a patient data dictionary.
 
-    Args:
-        data_dict: Dictionary with patient data containing episodes with timestamp fields
-
-    Returns:
-        Dictionary with timestamps converted to datetime objects
+    :param data_dict: Dictionary with patient data containing episodes with timestamp fields.
+    :return: Dictionary with timestamps converted to datetime objects.
     """
     result = copy.deepcopy(data_dict)
 
