@@ -1,27 +1,24 @@
 from kfp import dsl, compiler
 from kfp.dsl import Input, Output, Dataset, Model
 
+# Insert your dockerhub image below (e.g. "docker.io/<username>/<image_name>:<tag>")
+DOCKER_IMAGE = "<docker_image>"
 
-# -----------------------
-# Step 1: Download Repo
-# -----------------------
+
 @dsl.component(base_image="python:3.14-slim")
 def download_repo(
-    github_repo_url: str,
-    project_files: Output[Model],
-    data: Output[Dataset],
-    branch: str = "main",
+        github_repo_url: str,
+        project_files: Output[Model],
+        data: Output[Dataset],
+        branch: str = "main",
 ) -> None:
-    """Download specific scripts and data from a GitHub repository.
-    This component clones a GitHub repository, copies selected Python scripts
-    from the src/ folder into the `project_files` output, and the `data` folder
-    into the `data` output.
+    """
+    Download specific scripts and data from a GitHub repository.
 
-    Args:
-        github_repo_url (str): URL of the GitHub repository to clone.
-        project_files (Output[Model]): Output path for project scripts.
-        data (Output[Dataset]): Output path for data folder.
-        branch (str): Branch name to pull from (defaults to 'main').
+    :param github_repo_url: URL of the GitHub repository to clone.
+    :param project_files: Output path for project scripts.
+    :param data: Output path for data folder.
+    :param branch: Branch name to pull from (defaults to 'main').
     """
     import shutil
     from pathlib import Path
@@ -49,7 +46,6 @@ def download_repo(
     )
     print(f"Cloned repo {github_repo_url} (branch: {branch}).")
 
-    # Copy everything from src/ folder to project_files
     proj_path = Path(project_files.path)
     proj_path.mkdir(parents=True, exist_ok=True)
     src_folder = repo_dir / "src"
@@ -65,7 +61,6 @@ def download_repo(
     else:
         print("Warning: src/ folder not found in repo")
 
-    # Verify all required files exist
     required_files = [
         "adversarial_evaluation.py",
         "expert_knowledge.py",
@@ -88,7 +83,6 @@ def download_repo(
     if missing_files:
         raise FileNotFoundError(f"Missing required files: {', '.join(missing_files)}")
 
-    # Copy everything inside data folder
     data_path = Path(data.path)
     data_path.mkdir(parents=True, exist_ok=True)
     src_data_path = repo_dir / "data"
@@ -105,32 +99,27 @@ def download_repo(
         print("Warning: data folder not found in repo")
 
 
-# -----------------------
-# Step 2: Expert Knowledge Evaluation
-# -----------------------
 @dsl.component(base_image="python:3.14-slim")
 def expert_knowledge_evaluation(
-    project_files: Input[Model],
-    data: Input[Dataset],
-    expert_knowledge_results: Output[Dataset],
+        project_files: Input[Model],
+        data: Input[Dataset],
+        expert_knowledge_results: Output[Dataset],
 ) -> None:
-    """Runs expert knowledge evaluation on synthetic data.
+    """
+    Run expert knowledge evaluation on synthetic data.
 
-    Args:
-        project_files (Input[Model]): Input containing project scripts from repository.
-        data (Input[Dataset]): Input dataset containing synthetic data files.
-        expert_knowledge_results (Output[Dataset]): Output path for expert knowledge results.
+    :param project_files: Input containing project scripts from repository.
+    :param data: Input dataset containing synthetic data files.
+    :param expert_knowledge_results: Output path for expert knowledge results.
     """
     from pathlib import Path
     import subprocess
 
-    # Prepare paths
     proj_path = Path(project_files.path)
     data_path = Path(data.path)
     results_path = Path(expert_knowledge_results.path)
     results_path.mkdir(parents=True, exist_ok=True)
 
-    # Prepare script and arguments
     script = proj_path / "expert_knowledge.py"
     if not script.exists():
         raise FileNotFoundError(
@@ -150,32 +139,27 @@ def expert_knowledge_evaluation(
     print(f"Expert Knowledge evaluation finished. Results saved to {results_path}")
 
 
-# -----------------------
-# Step 3: Statistical Analysis
-# -----------------------
 @dsl.component(base_image="python:3.14-slim")
 def statistical_analysis(
-    project_files: Input[Model],
-    data: Input[Dataset],
-    statistical_results: Output[Dataset],
+        project_files: Input[Model],
+        data: Input[Dataset],
+        statistical_results: Output[Dataset],
 ) -> None:
-    """Runs comprehensive statistical analysis on synthetic data for quality assessment.
+    """
+    Run comprehensive statistical analysis on synthetic data for quality assessment.
 
-    Args:
-        project_files (Input[Model]): Input containing project scripts from repository.
-        data (Input[Dataset]): Input dataset containing synthetic data files.
-        statistical_results (Output[Dataset]): Output path for statistical analysis results.
+    :param project_files: Input containing project scripts from repository.
+    :param data: Input dataset containing synthetic data files.
+    :param statistical_results: Output path for statistical analysis results.
     """
     from pathlib import Path
     import subprocess
 
-    # Prepare paths
     proj_path = Path(project_files.path)
     data_path = Path(data.path)
     results_path = Path(statistical_results.path)
     results_path.mkdir(parents=True, exist_ok=True)
 
-    # Prepare script and arguments
     script = proj_path / "statistical_analysis.py"
     if not script.exists():
         raise FileNotFoundError(f"Statistical analysis script not found at {script}")
@@ -193,84 +177,57 @@ def statistical_analysis(
     print(f"Statistical analysis finished. Results saved to {results_path}")
 
 
-# -----------------------
-# Step 4: Adversarial Evaluation
-# -----------------------
-@dsl.component(
-    base_image="python:3.14-slim",
-    packages_to_install=[
-        "requests==2.32.5",
-        "pandas==2.3.3",
-        "tqdm==4.67.1",
-        "scikit-learn==1.7.2",
-    ],
-)
+@dsl.container_component
 def adversarial_evaluation(
-    project_files: Input[Model],
-    data: Input[Dataset],
-    adversarial_evaluation_results: Output[Dataset],
-) -> None:
-    """This component executes adversarial evaluation.
-    Runs adversarial evaluation comparing synthetic vs real-world data performance.
-
-    Args:
-        project_files (Input[Model]): Input containing project scripts from repository.
-        data (Input[Dataset]): Input dataset containing synthetic and real-world data files.
-        adversarial_evaluation_results (Output[Dataset]): Output path for adversarial evaluation results.
+        project_files: Input[Model],
+        data: Input[Dataset],
+        adversarial_evaluation_results: Output[Dataset],
+):
     """
-    from pathlib import Path
-    import subprocess
+    Run adversarial evaluation comparing synthetic vs real-world data performance.
 
-    # Prepare paths
-    proj_path = Path(project_files.path)
-    data_path = Path(data.path)
-    results_path = Path(adversarial_evaluation_results.path)
-    results_path.mkdir(parents=True, exist_ok=True)
+    :param project_files: Input containing project scripts from repository.
+    :param data: Input dataset containing synthetic and real-world data files.
+    :param adversarial_evaluation_results: Output path for adversarial evaluation results.
+    """
+    command_str = f"""
+        set -e
+        apt-get update
+        apt-get install -y python3 python3-dev wget curl
+        curl -sS https://bootstrap.pypa.io/get-pip.py | python3 - --break-system-packages
+        python3 -m pip install --break-system-packages pandas==3.0.0 scikit-learn==1.8.0
+        cd {project_files.path}
 
-    # Prepare script and arguments
-    script = proj_path / "adversarial_evaluation.py"
-    if not script.exists():
-        raise FileNotFoundError(f"Adversarial Evaluation script not found at {script}")
+        python3 adversarial_evaluation.py \
+            --synth_dir {data.path}/synthetic_data \
+            --rwd_dir {data.path}/rwd_data \
+            --output {adversarial_evaluation_results.path}/adversarial_evaluation_results.json \
+            --docker_image {DOCKER_IMAGE} \
+            --in_docker True
+        ls -la {adversarial_evaluation_results.path}
+    """
 
-    cmd = [
-        "python",
-        str(script),
-        "--synth_dir",
-        str(data_path / "synthetic_data"),
-        "--rwd_dir",
-        str(data_path / "rwd_data"),
-        "--output",
-        str(results_path / "adversarial_evaluation_results.json"),
-    ]
-    subprocess.run(cmd, check=True)
-
-    print(f"Adversarial Evaluation finished. Results saved to {results_path}")
+    return dsl.ContainerSpec(
+        image=DOCKER_IMAGE,
+        command=["sh", "-c"],
+        args=[command_str]
+    )
 
 
-# -----------------------
-# -----------------------
-# Define Pipeline
-# -----------------------
-# -----------------------
 @dsl.pipeline(
     name="STAR Post-Market Evaluation Pipeline",
     description="Runs expert knowledge, statistical analysis, and adversarial evaluation checks.",
 )
 def star_post_market_pipeline(
-    github_repo_url: str,
-    branch: str = "main",
+        github_repo_url: str,
+        branch: str = "main",
 ):
-    """STAR Post-Market Evaluation Pipeline for synthetic data validation.
-    This pipeline performs comprehensive post-market evaluation of STAR synthetic
-    data through three parallel evaluation components: expert knowledge validation
-    against clinical ranges, statistical quality analysis, and adversarial evaluation
-    comparing synthetic vs real-world model performance.
-
-    Args:
-        github_repo_url (str): URL of the GitHub repository containing evaluation scripts.
-        branch (str): Git branch to pull from repository (defaults to 'main').
     """
+    STAR Post-Market Evaluation Pipeline for synthetic data validation.
 
+    :param github_repo_url: URL of the GitHub repository containing evaluation scripts.
+    :param branch: Git branch to pull from repository (defaults to 'main').
+    """
     repo_task = download_repo(github_repo_url=github_repo_url, branch=branch)
     repo_task.set_caching_options(False)
     repo_task.set_cpu_request("1000m")
@@ -306,15 +263,15 @@ def star_post_market_pipeline(
     )
     adversarial_task.after(repo_task)
     adversarial_task.set_caching_options(False)
-    adversarial_task.set_cpu_request("1000m")
-    adversarial_task.set_cpu_limit("2000m")
-    adversarial_task.set_memory_request("2Gi")
-    adversarial_task.set_memory_limit("4Gi")
+    adversarial_task.set_cpu_request("4000m")
+    adversarial_task.set_cpu_limit("6000m")
+    adversarial_task.set_memory_request("8Gi")
+    adversarial_task.set_memory_limit("12Gi")
 
 
 if __name__ == "__main__":
-    compiler = compiler.Compiler()
-    compiler.compile(
+    kfp_compiler = compiler.Compiler()
+    kfp_compiler.compile(
         pipeline_func=star_post_market_pipeline,
         package_path="star_post_market_pipeline.yaml",
     )

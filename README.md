@@ -26,7 +26,7 @@ This repository implements a comprehensive post-market evaluation pipeline for s
     - **Check 3 - Diabetic Status Validation**: Confirms diabeticStatus values are within valid range (0=non-diabetic, 1=Type 1 diabetes, 2=Type 2 diabetes).
     - **Check 4 - Measurement Frequency**: Verifies at least 3 blood glucose measurements exist in the 6-hour window prior to evaluation, ensuring sufficient data density for accurate predictions.
 
-- **Adversarial Evaluation**: Compares STAR model performance between real-world and synthetic data using the STAR API for blood glucose interval predictions. The evaluation assesses:
+- **Adversarial Evaluation**: Compares STAR model performance between real-world and synthetic data using the STAR Docker model for blood glucose interval predictions. The evaluation assesses:
     - **Coverage Rate**: Percentage of ground truth blood glucose values falling within predicted intervals (BG5TH to BG95TH), indicating model calibration quality.
     - **MAE (Mean Absolute Error)**: Average absolute difference between predicted interval midpoints and ground truth values, measuring point prediction accuracy.
     - **RMSE (Root Mean Squared Error)**: Square root of average squared errors, penalizing larger prediction errors more heavily.
@@ -38,7 +38,8 @@ This repository implements a comprehensive post-market evaluation pipeline for s
 
 1. Python version must be 3.14.
 2. Create a virtual environment and install the dependencies using the [requirements.txt](./requirements.txt) file: `pip install -r requirements.txt`.
-3. API access to the STAR model endpoint at `https://demo.insilicare.com/api/star/REALM/validation`.
+3. Docker Desktop installed and running.
+4. Access to the STAR Docker model image (`glucomeo`).
 
 ## Data Structure
 
@@ -99,47 +100,45 @@ The input data is expected to be in JSON format with the following structure:
 - `diabeticStatus`: Patient diabetes type (0=non-diabetic, 1=Type 1, 2=Type 2)
 - `nutritionBolus`: Nutritional bolus records
 
-In the json data, ohter fileds are also present, but these are used from the model in order to predict the blood glucose level values.
+In the json data, other fields are also present, but these are used from the model in order to predict the blood glucose level values.
 
 ## Running the STAR Model
 
-The STAR model is accessible via a REST API endpoint. The API predicts blood glucose evolution ranges based on patient data.
+The STAR model is packaged as a Docker image (`glucomeo`). The model processes all JSON files in an input directory and generates a single `results.csv` file in the output directory.
 
-### API Endpoint
-```
-POST https://demo.insilicare.com/api/star/REALM/validation
-```
-
-### Example Request
+### Docker Run Command
 
 ```bash
-curl -X POST https://demo.insilicare.com/api/star/REALM/validation \
-  -H "Content-Type: application/json" \
-  -d '{
-  "patient": {
-    "__class": "star.algo.data.Patient",
-    "hospitalID": "386_854_935",
-    "updateTime": 1584555782000,
-    "episodes": [...]
-  },
-  "predictionTime": 1584556520000
-}'
+docker run --rm \
+  -e AEONICS_JAVA_OPTIONS=-Xmx1g \
+  -e AEONICS_LICENSE_STORE_PATH=/opt/aeonics/aeonics.license \
+  -e AEONICS_LICENSE_STORE_PASS=secret \
+  -e AEONICS_ACCEPT_UNSIGNED_MODULES=true \
+  -e AEONICS_LOG_LEVEL=1000 \
+  -e REALM_INPUT_DIR=/home/in \
+  -e REALM_OUTPUT_DIR=/home/out \
+  -w /opt/aeonics \
+  -u 0 \
+  -v /path/to/input/directory:/home/in \
+  -v /path/to/output/directory:/home/out \
+  glucomeo
 ```
 
-### Example Response
+Replace `/path/to/input/directory` with the directory containing your patient JSON files and `/path/to/output/directory` with where you want `results.csv` to be saved.
 
-```json
-{
-  "BG5TH": 7.196445581533928,
-  "BG95TH": 17.42121412769019
-}
+### Output Format
+
+The model generates a `results.csv` file with the following structure:
+
+```csv
+BG5TH,BG95TH
+7.196445581533928,17.42121412769019
+...
 ```
 
-**Response Fields:**
-- `BG5TH`: Lower bound (5th percentile) of predicted blood glucose range at predictionTime
-- `BG95TH`: Upper bound (95th percentile) of predicted blood glucose range at predictionTime
-
-The prediction interval [BG5TH, BG95TH] represents the model's confidence range for blood glucose at the specified future time point, starting from the patient's `updateTime`.
+Where:
+- `BG5TH`: Lower bound (5th percentile) of predicted blood glucose range
+- `BG95TH`: Upper bound (95th percentile) of predicted blood glucose range
 
 ## Post-Market Evaluation Report
 
@@ -270,13 +269,17 @@ Compares STAR model performance between synthetic and real-world data using [src
 python src/adversarial_evaluation.py \
     --synth_dir /path/to/synthetic_patients \
     --rwd_dir /path/to/real_patients \
-    --output output/adversarial_evaluation_results.json
+    --output output/adversarial_evaluation_results.json \
+    --docker_image glucomeo \
+    --in_docker False
 ```
 
 **Arguments:**
 - `--synth_dir`: Path to directory containing synthetic patient JSON files.
 - `--rwd_dir`: Path to directory containing real-world patient JSON files.
 - `--output`: Output JSON file path (default: `output/adversarial_evaluation_results.json`).
+- `--docker_image`: Name of the Docker image containing the STAR model (default: `glucomeo`).
+- `--in_docker`: Boolean flag indicating whether the script is running inside the Docker container (default: `False`).
 
 **Output Format:**
 ```json
@@ -328,7 +331,6 @@ The adversarial evaluation compares STAR model prediction quality between real-w
 - **MAPE (Mean Absolute Percentage Error)**: Percentage error normalized by ground truth values. Lower MAPE indicates better relative accuracy across different blood glucose ranges. A 35.6% MAPE means predictions deviate by approximately 36% from actual values on average.
 - **Performance Differences**: Shows the absolute difference between real-world and synthetic metrics. Small differences indicate the synthetic data successfully captures real-world patterns. Large differences suggest distribution mismatch between synthetic and real data.
 
-
 ## Kubeflow Pipeline Component
 
 The [kubeflow_component/star_post_market_component.py](./kubeflow_component/star_post_market_component.py) file defines a Kubeflow pipeline for automating the STAR post-market evaluation workflow. This pipeline orchestrates the following components:
@@ -338,7 +340,7 @@ The [kubeflow_component/star_post_market_component.py](./kubeflow_component/star
     - `expert_knowledge.py` - Clinical validation against medical ranges
     - `statistical_analysis.py` - Data quality assessment
     - `adversarial_evaluation.py` - Model performance comparison
-    - `STAR_model.py` - STAR API wrapper
+    - `STAR_model.py` - STAR Docker wrapper
     - `utils/` directory with helper functions (`generic_utils.py`, `data_helpers.py`, `time_conversion.py`)
   - **Data**: The `data/` folder should contain two subdirectories:
     - `synthetic_data/` - Directory with synthetic patient JSON files
@@ -346,7 +348,7 @@ The [kubeflow_component/star_post_market_component.py](./kubeflow_component/star
   
 - **Expert Knowledge Evaluation**: Executes clinical validation against physiological ranges for all synthetic patient files.
 - **Statistical Analysis**: Performs comprehensive data quality assessment on all synthetic patient files.
-- **Adversarial Evaluation**: Compares STAR model performance between synthetic and real-world patient data using API calls.
+- **Adversarial Evaluation**: Compares STAR model performance between synthetic and real-world patient data using Docker batch processing.
 
 ### Pipeline Architecture
 
@@ -355,6 +357,16 @@ The [kubeflow_component/star_post_market_component.py](./kubeflow_component/star
 The pipeline follows this execution pattern:
 1. **Sequential Phase**: Repository download runs first, copying all required scripts and data.
 2. **Parallel Phase**: All three evaluation components (expert knowledge, statistical analysis, adversarial evaluation) run simultaneously after repository download completes, maximizing computational efficiency.
+
+### Important Configuration
+
+Before running the pipeline, you **must** configure the Docker image in the `star_post_market_component.py` file:
+
+```python
+DOCKER_IMAGE = "<docker_image>"
+```
+
+Replace `glucomeo` with your actual Docker image name if different. Note that the Docker image should be available in a Docker registry that is accessible from your Kubeflow environment.
 
 ### Running the Pipeline
 
@@ -378,9 +390,9 @@ The Kubeflow UI expects the following pipeline run parameters (arguments) when r
 
 Pipeline artifacts are stored in MinIO object storage within the Kubeflow namespace. To access these artifacts:
 
-1. Set up port forwarding to the MinIO service by running: `kubectl port-forward -n kubeflow svc/minio-service 9000:9000`.
-2. Access the MinIO web interface at `http://localhost:9000`.
-3. Login with the default credentials: username: `minio`, password: `minio123`.
+1. Set up port forwarding to the MinIO service: `kubectl port-forward -n kubeflow svc/minio-service 9000:9000`
+2. Access the MinIO web interface at `http://localhost:9000`
+3. Login with the default credentials: username: `minio`, password: `minio123`
 4. Navigate to the `mlpipeline` bucket, where you'll find the generated folders and files from each pipeline step, organized by the automatically assigned pipeline UUID. (An example location could be: `http://localhost:9000/minio/mlpipeline/v2/artifacts/star-post-market-evaluation-pipeline/b2b94d5f-2cde-489e-a7f0-60b6bc93f6df/`)
 
 Each evaluation component creates a separate output artifact containing its respective JSON results file.

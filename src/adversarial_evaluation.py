@@ -1,8 +1,6 @@
 import argparse
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any
 import pandas as pd
-from tqdm import tqdm
 from pathlib import Path
 from sklearn.metrics import (
     mean_absolute_error,
@@ -11,136 +9,127 @@ from sklearn.metrics import (
 )
 
 from utils.generic_utils import load_json_file, get_json_files, save_json
-from utils.data_helpers import extract_prediction_info, calculate_interval_midpoint
-from STAR_model import STARWrapper
+from utils.data_helpers import extract_prediction_info, calculate_interval_midpoint, extract_hospital_id
+from STAR_model import STARDockerWrapper
 
 
-def process_single_patient(filepath: str, model: STARWrapper) -> dict:
+def process_patients_batch(
+        data_path: str,
+        docker_image: str = "glucomeo",
+        in_docker_run: bool = False
+) -> pd.DataFrame:
     """
-    Process one patient file.
+    Process patient files in batch and return results as DataFrame.
 
-    Args:
-        filepath (str): Path to patient JSON file.
-        model (STARWrapper): STAR API wrapper instance.
-
-    Returns:
-        dict: Result dictionary with predictions and validation.
+    :param data_path: Path to directory containing patient JSON files.
+    :param docker_image: Name of the Docker image containing the STAR model.
+    :param in_docker_run: Indicates if script runs inside the Docker container.
+    :return: DataFrame with predictions and ground truth values.
     """
-
-    try:
-        patient_data = load_json_file(filepath)
-        pred_time, actual_value = extract_prediction_info(patient_data)
-
-        pred_interval = model.predict(
-            patient_data=patient_data, prediction_time=pred_time
-        )
-        is_in_range = model.validate_prediction(
-            interval=pred_interval, ground_truth=actual_value
-        )
-
-        interval_center = calculate_interval_midpoint(pred_interval)
-
-        return {
-            "file_name": filepath,
-            "ground_truth": actual_value,
-            "BG5TH": pred_interval["BG5TH"],
-            "BG95TH": pred_interval["BG95TH"],
-            "interval_center": interval_center,
-            "is_in_range": is_in_range,
-            "success": True,
-            "error_message": None,
-        }
-    except Exception as e:
-        return {
-            "file_name": filepath,
-            "ground_truth": None,
-            "BG5TH": None,
-            "BG95TH": None,
-            "interval_center": None,
-            "is_in_range": None,
-            "success": False,
-            "error_message": str(e),
-        }
-
-
-def parallel_predict_patients(data_path: str, max_workers: int = 10) -> pd.DataFrame:
-    """
-    Process patient files in parallel and return results as DataFrame.
-
-    Args:
-        data_path (str): Path to directory containing patient JSON files.
-        max_workers (int): Number of parallel workers (default: 10).
-
-    Returns:
-        pd.DataFrame: Results with prediction intervals and validation.
-    """
-
     patient_files = get_json_files(data_path)
-    model_wrapper = STARWrapper()
+
+    if not patient_files:
+        raise ValueError(f"No JSON files found in directory: {data_path}")
+
+    model_wrapper = STARDockerWrapper(
+        docker_image=docker_image,
+        in_docker_run=in_docker_run
+    )
+
+    predictions_df = model_wrapper.predict_batch(patient_files)
+    predictions_dict = predictions_df.set_index("hospitalID").to_dict("index")
 
     results = []
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [
-            executor.submit(process_single_patient, file, model_wrapper)
-            for file in patient_files
-        ]
+    for filepath in patient_files:
+        try:
+            patient_data = load_json_file(filepath)
+            hospital_id = extract_hospital_id(patient_data)
+            pred_time, actual_value = extract_prediction_info(patient_data)
 
-        for future in tqdm(
-            as_completed(futures), total=len(patient_files), desc="Processing"
-        ):
-            results.append(future.result())
+            # Match prediction by hospitalID
+            if hospital_id not in predictions_dict:
+                raise ValueError(f"No prediction found for hospitalID: {hospital_id}")
 
-    return pd.DataFrame(results)
+            prediction = predictions_dict[hospital_id]
+            bg5th = prediction["BG5TH"]
+            bg95th = prediction["BG95TH"]
+
+            interval_center = calculate_interval_midpoint({
+                "BG5TH": bg5th,
+                "BG95TH": bg95th
+            })
+
+            results.append({
+                "file_name": Path(filepath).name,
+                "hospital_id": hospital_id,
+                "ground_truth": actual_value,
+                "BG5TH": bg5th,
+                "BG95TH": bg95th,
+                "interval_center": interval_center,
+                "success": True,
+                "error_message": None,
+            })
+        except Exception as e:
+            results.append({
+                "file_name": Path(filepath).name,
+                "hospital_id": None,
+                "ground_truth": None,
+                "BG5TH": None,
+                "BG95TH": None,
+                "interval_center": None,
+                "success": False,
+                "error_message": str(e),
+            })
+
+    results_df = pd.DataFrame(results)
+
+    successful_results = results_df[results_df["success"]].copy()
+    if not successful_results.empty:
+        ground_truth_series = successful_results["ground_truth"]
+        predictions_for_validation = successful_results[["BG5TH", "BG95TH"]]
+
+        is_in_range = model_wrapper.validate_predictions(
+            predictions=predictions_for_validation,
+            ground_truth=ground_truth_series
+        )
+
+        results_df.loc[results_df["success"], "is_in_range"] = is_in_range.values
+
+    return results_df
 
 
 def calculate_metrics(df: pd.DataFrame) -> Dict[str, float]:
     """
     Calculate coverage rate, MAE, RMSE, and MAPE from results DataFrame.
 
-    Args:
-        df (pd.DataFrame): Results DataFrame with predictions.
-
-    Returns:
-        Dict[str, float]: Dictionary with coverage_rate, mae, rmse, mape.
+    :param df: Results DataFrame with predictions.
+    :return: Dictionary with coverage_rate, mae, rmse, mape.
     """
-
-    # Filter only successful predictions
     df_success = df[df["success"] == True].copy()
 
-    # Coverage Rate: % of ground truth values inside the predicted interval
     coverage_rate = df_success["is_in_range"].mean()
 
-    # Point prediction errors using interval center
     y_true = df_success["ground_truth"].values
     y_pred = df_success["interval_center"].values
 
-    # MAE: Mean Absolute Error
     mae = mean_absolute_error(y_true, y_pred)
-
-    # RMSE: Root Mean Squared Error
     rmse = root_mean_squared_error(y_true, y_pred)
-
-    # MAPE: Mean Absolute Percentage Error
     mape = mean_absolute_percentage_error(y_true, y_pred)
 
     return {"coverage_rate": coverage_rate, "mae": mae, "rmse": rmse, "mape": mape}
 
 
 def create_adversarial_evaluation_report(
-    rwd_metrics: Dict[str, float],
-    synth_metrics: Dict[str, float],
+        rwd_metrics: Dict[str, float],
+        synth_metrics: Dict[str, float],
 ) -> Dict[str, Any]:
     """
     Create adversarial evaluation report comparing RWD and synthetic data metrics.
 
-    Args:
-        rwd_metrics (Dict[str, float]): Metrics from real-world data.
-        synth_metrics (Dict[str, float]): Metrics from synthetic data.
-
-    Returns:
-        Dict[str, Any]: Adversarial evaluation report.
+    :param rwd_metrics: Metrics from real-world data.
+    :param synth_metrics: Metrics from synthetic data.
+    :return: Adversarial evaluation report.
     """
-
     report = {
         "information": (
             "Adversarial evaluation comparing STAR model performance on real-world data (RWD) "
@@ -163,9 +152,9 @@ def create_adversarial_evaluation_report(
             "indicate distribution mismatch and potential limitations in synthetic data utility."
         ),
         "Coverage Rate": {
-            "rwd": f"{round(rwd_metrics["coverage_rate"]*100, 2)}pp",
-            "synthetic": f"{round(synth_metrics["coverage_rate"]*100, 2)}pp",
-            "difference": f"{round(abs(rwd_metrics['coverage_rate'] - synth_metrics['coverage_rate'])*100, 2)}pp",
+            "rwd": f"{round(rwd_metrics['coverage_rate'] * 100, 2)}pp",
+            "synthetic": f"{round(synth_metrics['coverage_rate'] * 100, 2)}pp",
+            "difference": f"{round(abs(rwd_metrics['coverage_rate'] - synth_metrics['coverage_rate']) * 100, 2)}pp",
         },
         "MAE": {
             "rwd": round(rwd_metrics["mae"], 4),
@@ -178,22 +167,45 @@ def create_adversarial_evaluation_report(
             "difference": f"{abs(rwd_metrics['rmse'] - synth_metrics['rmse']):.4f}",
         },
         "MAPE": {
-            "rwd": f"{round(rwd_metrics["mape"]*100, 2)}pp",
-            "synthetic": f"{round(synth_metrics["mape"]*100, 2)}pp",
-            "difference": f"{round(abs(rwd_metrics['mape'] - synth_metrics['mape'])*100, 2)}pp",
+            "rwd": f"{round(rwd_metrics['mape'] * 100, 2)}pp",
+            "synthetic": f"{round(synth_metrics['mape'] * 100, 2)}pp",
+            "difference": f"{round(abs(rwd_metrics['mape'] - synth_metrics['mape']) * 100, 2)}pp",
         },
     }
 
     return report
 
 
-def do_adversarial_evaluation(synth_dir, rwd_dir, output_path):
+def do_adversarial_evaluation(
+        synth_dir,
+        rwd_dir,
+        output_path,
+        docker_image: str = "glucomeo",
+        in_docker_run: bool = False
+):
+    """
+    Run adversarial evaluation comparing synthetic and real-world data.
 
-    # Predictions for synth and rwd data
-    synth_predictions = parallel_predict_patients(data_path=synth_dir)
-    rwd_predictions = parallel_predict_patients(data_path=rwd_dir)
+    :param synth_dir: Path to synthetic data directory.
+    :param rwd_dir: Path to real-world data directory.
+    :param output_path: Output JSON file path.
+    :param docker_image: Name of the Docker image containing the STAR model.
+    :param in_docker_run: Indicates if script runs inside the Docker container.
+    """
+    print("Processing synthetic data...")
+    synth_predictions = process_patients_batch(
+        data_path=synth_dir,
+        docker_image=docker_image,
+        in_docker_run=in_docker_run
+    )
 
-    # Calculate metrics
+    print("Processing real-world data...")
+    rwd_predictions = process_patients_batch(
+        data_path=rwd_dir,
+        docker_image=docker_image,
+        in_docker_run=in_docker_run
+    )
+
     synth_metrics = calculate_metrics(synth_predictions)
     rwd_metrics = calculate_metrics(rwd_predictions)
 
@@ -209,13 +221,22 @@ def do_adversarial_evaluation(synth_dir, rwd_dir, output_path):
     print(f"Adversarial Evaluation Completed. Results saved to {output_path}")
 
 
-def main() -> None:
-    """Main entry point for adversarial evaluation of STAR synthetic vs real-world data.
-
-    Parses command line arguments and executes adversarial evaluation comparing
-    model performance on synthetic and real-world datasets using api model.
+def str2bool(v: str) -> bool:
     """
+    Convert a string 'True' or 'False' to a Python boolean.
+    """
+    if v == "True":
+        return True
+    elif v == "False":
+        return False
+    else:
+        raise argparse.ArgumentTypeError("Boolean value expected: 'True' or 'False'")
 
+
+def main() -> None:
+    """
+    Main entry point for adversarial evaluation of STAR synthetic vs real-world data.
+    """
     parser = argparse.ArgumentParser(
         description="Run adversarial evaluation for STAR synthetic data"
     )
@@ -234,6 +255,18 @@ def main() -> None:
         default="output/adversarial_evaluation_results.json",
         help="Output JSON file path",
     )
+    parser.add_argument(
+        "--docker_image",
+        type=str,
+        default="glucomeo",
+        help="The docker image to run for the model",
+    )
+    parser.add_argument(
+        "--in_docker",
+        type=str2bool,
+        default=False,
+        help="Indicates if the script will be executed inside the container of the provided docker image",
+    )
 
     args = parser.parse_args()
 
@@ -242,6 +275,8 @@ def main() -> None:
         synth_dir=args.synth_dir,
         rwd_dir=args.rwd_dir,
         output_path=args.output,
+        docker_image=args.docker_image,
+        in_docker_run=args.in_docker,
     )
 
 
