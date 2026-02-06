@@ -36,6 +36,28 @@ def extract_prediction_info(patient_data: Dict[str, Any]) -> Tuple[int, float]:
     return pred_time, actual_value
 
 
+def extract_hospital_id(patient_data: Dict[str, Any]) -> str:
+    """
+    Extract hospitalID from patient data.
+
+    :param patient_data: Patient data JSON object.
+    :return: Hospital ID string.
+    :raises ValueError: If hospitalID field is missing or invalid.
+    """
+    if not patient_data:
+        raise ValueError("Patient data is empty")
+
+    if "hospitalID" not in patient_data:
+        raise ValueError("Missing 'hospitalID' field in patient data")
+
+    hospital_id = patient_data["hospitalID"]
+
+    if not hospital_id:
+        raise ValueError("Hospital ID is empty")
+
+    return str(hospital_id)
+
+
 def calculate_interval_midpoint(interval: Dict[str, float]) -> float:
     """
     Calculate the midpoint (average) of a predicted blood glucose interval.

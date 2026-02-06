@@ -135,9 +135,11 @@ class STARDockerWrapper:
 
         results_df = pd.read_csv(output_file)
 
-        if "BG5TH" not in results_df.columns or "BG95TH" not in results_df.columns:
+        required_columns = ["BG5TH", "BG95TH", "hospitalID"]
+        missing_columns = [col for col in required_columns if col not in results_df.columns]
+        if missing_columns:
             raise ValueError(
-                f"Output CSV missing required columns. Got: {results_df.columns.tolist()}"
+                f"Output CSV missing required columns: {missing_columns}. Got: {results_df.columns.tolist()}"
             )
 
         try:

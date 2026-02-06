@@ -9,7 +9,7 @@ from sklearn.metrics import (
 )
 
 from utils.generic_utils import load_json_file, get_json_files, save_json
-from utils.data_helpers import extract_prediction_info, calculate_interval_midpoint
+from utils.data_helpers import extract_prediction_info, calculate_interval_midpoint, extract_hospital_id
 from STAR_model import STARDockerWrapper
 
 
@@ -37,23 +37,34 @@ def process_patients_batch(
     )
 
     predictions_df = model_wrapper.predict_batch(patient_files)
+    predictions_dict = predictions_df.set_index("hospitalID").to_dict("index")
 
     results = []
-    for idx, filepath in enumerate(patient_files):
+    for filepath in patient_files:
         try:
             patient_data = load_json_file(filepath)
+            hospital_id = extract_hospital_id(patient_data)
             pred_time, actual_value = extract_prediction_info(patient_data)
 
+            # Match prediction by hospitalID
+            if hospital_id not in predictions_dict:
+                raise ValueError(f"No prediction found for hospitalID: {hospital_id}")
+
+            prediction = predictions_dict[hospital_id]
+            bg5th = prediction["BG5TH"]
+            bg95th = prediction["BG95TH"]
+
             interval_center = calculate_interval_midpoint({
-                "BG5TH": predictions_df.iloc[idx]["BG5TH"],
-                "BG95TH": predictions_df.iloc[idx]["BG95TH"]
+                "BG5TH": bg5th,
+                "BG95TH": bg95th
             })
 
             results.append({
                 "file_name": Path(filepath).name,
+                "hospital_id": hospital_id,
                 "ground_truth": actual_value,
-                "BG5TH": predictions_df.iloc[idx]["BG5TH"],
-                "BG95TH": predictions_df.iloc[idx]["BG95TH"],
+                "BG5TH": bg5th,
+                "BG95TH": bg95th,
                 "interval_center": interval_center,
                 "success": True,
                 "error_message": None,
@@ -61,6 +72,7 @@ def process_patients_batch(
         except Exception as e:
             results.append({
                 "file_name": Path(filepath).name,
+                "hospital_id": None,
                 "ground_truth": None,
                 "BG5TH": None,
                 "BG95TH": None,
