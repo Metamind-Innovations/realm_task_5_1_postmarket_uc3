@@ -404,6 +404,12 @@ Each evaluation component creates a separate output artifact containing its resp
 2. Gopalakrishnan, M., Manappallil, R. G., Ramdas, D., & Jayaraj, J. (2017). The survival story of a diabetic ketoacidosis patient with blood sugar levels of 1985 mg/dL. Asian Journal of Medical Sciences, 8(4), 60-61. [ref. here](http://researchgate.net/publication/317551782_The_survival_story_of_a_diabetic_ketoacidosis_patient_with_blood_sugar_levels_of_1985_mgdL)
 3. Walsh, John, Ruth Roberts, and Lutz Heinemann. "Confusion regarding duration of insulin action: a potential source for major insulin dose errors by bolus calculators." Journal of diabetes science and technology 8.1 (2014): 170-178. [ref. here](https://www.researchgate.net/publication/262787177_Confusion_Regarding_Duration_of_Insulin_Action_A_Potential_Source_for_Major_Insulin_Dose_Errors_by_Bolus_Calculators)
 
+## Acknowledgements
+
+🇪🇺 REALM project has received funding from the European Union's Horizon Europe research and innovation programme under **Grant Agreement No. 101095435**.
+
+*Disclaimer: Funded by the European Union. Views and opinions expressed are however those of the author(s) only and do not necessarily reflect those of the European Union or European Commission. Neither the European Union nor the European Commission can be held responsible for them.*
+
 ## 📜 License & Usage
 
 All rights reserved by MetaMinds Innovations.
